@@ -1,43 +1,49 @@
 {-# Language TemplateHaskell, QuasiQuotes, FlexibleContexts #-}
 
 import Text.Peggy
+import Text.Groom
 
 type Holed = [Either String Int]
+--data Term = A Holed | L [Term]
 
 [peggy|
-top :: Double = expr !.
 
-arglist :: [Holed]
-  = expr "+" fact { $1 + $2 }
-  / expr "-" fact { $1 - $2 }
-  / fact
+atom ::: String
+	= '\"' ('\"' [\"] / [^\"])* '\"'
+	/ '\'' ('\'' [\'] / [^\'])* '\''
+	/ '▷'  ('◁'[◁]/[^◁])* '◁'
+	/ '$'  ('$'[$]/[^$])* '$'
 
-argmatrix :: [[Holed]]
+term :: Holed
+	= atom { [$1] } / application { $1 }
 
-fact :: Double
-  = fact "*" term { $1 * $2 }
-  / fact "/" term { $1 / $2 }
-  / term
+application :: Holed
+	= matrix term { $2 }
 
-term :: Double
-  = "(" expr ")"
-  / number
+matrix :: [[Holed]]
+	= '{' ((term, ","),";") '}'
 
-number ::: Double
-  = [1-9] [0-9]* { read ($1 : $2) }
 |]
 
-main = print . parseString top "<stdin>" =<< getContents
+main = putStrLn . groom . parseString term "<stdin>" =<< getContents
 
 
 {-
  a b c
  a1 b1 c1
  d1 e1 f1
- :dig
  ▶ 
    'x' 'y' 'z'
 	▶ aererwwre ı ı ı ı
+
+
+
+
+
+     aererwwre x ı ı ı
+	  aererwwre y ı ı ı
+	  aererwwre z ı ı ı
+
 
 
 
@@ -51,6 +57,38 @@ main = print . parseString top "<stdin>" =<< getContents
      aererwwre x d1 e1 f1
 	  aererwwre y d1 e1 f1
 	  aererwwre z d1 e1 f1
+
+
+
+a
+b
+c
+▶	ı123
+djk
+▶  ı456
+
+
+
+a123
+b123
+c123
+djk
+	ı456
+
+
+a123456
+b123456
+c123456
+djk456
+
+
+{	{ a , b , c } ,
+	{ a1 , b1 , c1 } ,
+	{ d1 , e1 , f1 } 	}
+	{ { x , y , z } ı , { y } , { z } } 333ıııı
+
+
+
 
 
 
