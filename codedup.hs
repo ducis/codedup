@@ -1,98 +1,81 @@
-{-# Language TemplateHaskell, QuasiQuotes, FlexibleContexts #-}
+{-
+runghc codedup.hs < t0.in
+-}
+{-# Language TemplateHaskell, QuasiQuotes, FlexibleContexts,TupleSections,LambdaCase #-}
 
 import Text.Peggy
 import Text.Groom
-
-type Holed = [Either String Int]
+import Data.Either
+import Control.Applicative
+import Data.List
+import qualified Data.Vector as V
+import Data.Maybe
+type Shard = Either String Int
+type Holed = [Shard]
 --data Term = A Holed | L [Term]
+
+substitute::(String, [[Holed]]) -> Holed -> Holed
+substitute (sep, mat) h = intercalate [Left sep] [ f (cycle row) h | row <- mat]
+	where
+	f = curry $ \case 
+		(xs, Left y:ys) -> Left y : f xs ys
+		--([], Right y:ys) -> Right y : f [] ys
+		(x:xs, Right 0:ys) -> x ++ f xs ys
+		(xs, Right y:ys) -> Right (y-1) : f xs ys
+		(_, []) -> []
+
+-- TODO : concat
 
 [peggy|
 
-atom ::: String
-	= '\"' ('\"' [\"] / [^\"])* '\"'
-	/ '\'' ('\'' [\'] / [^\'])* '\''
-	/ '▷'  ('◁'[◁]/[^◁])* '◁'
-	/ '$'  ('$'[$]/[^$])* '$'
+--root0 :: [Holed] --String
+--	= term+ -- { concat $ lefts $ concat $1 }
+
+root :: String
+	= term+ { unlines $ map (concat.lefts) $1 }
+
+mixture :: String
+	= ("▷▷" root "◁◁" 
+	/ . {[$1]})* {concat $1}
+
+-- atom ::: String
+	-- = '▷'  ('◁'[◁]/[^◁])* '◁'
+	-- / '$'  ('$'[$]/[^$])* '$'
+	-- / [a-z0-9ı]+
+	
+hole :: Shard
+	= 'ı' [0-9]* {Right $ read ('0':$1)} 	
+
+atom ::: Holed
+	= '▷' (
+			hole/
+			('◁'[◁]/[^◁ı])+{Left $1}
+		)* '◁'
+	/'$' (
+			hole/
+			('$'[$]/[^$ı])+{Left $1}
+		)* '$'
+	/	(
+			hole/
+			[a-z0-9]+{Left $1} 
+		)+
 
 term :: Holed
-	= atom { [$1] } / application { $1 }
+	= "(" terms ")" / application { $1 } / atom 
+
+terms :: Holed
+	= term+ {concat $1}
 
 application :: Holed
-	= matrix term { $2 }
+	= ( 
+	"{" matrix "}" { ("\n",$1) } / 
+	"[" matrix "]" { ("",$1) }  --TODO: additional delimiter
+	) term { substitute $1 $2 }
 
 matrix :: [[Holed]]
-	= '{' ((term, ","),";") '}'
+	= ((term, ","),";")
 
 |]
 
-main = putStrLn . groom . parseString term "<stdin>" =<< getContents
-
-
-{-
- a b c
- a1 b1 c1
- d1 e1 f1
- ▶ 
-   'x' 'y' 'z'
-	▶ aererwwre ı ı ı ı
-
-
-
-
-
-     aererwwre x ı ı ı
-	  aererwwre y ı ı ı
-	  aererwwre z ı ı ı
-
-
-
-
-
-     aererwwre x a b c
-	  aererwwre y a b c
-	  aererwwre z a b c
-     aererwwre x a1 b1 c1
-	  aererwwre y a1 b1 c1
-	  aererwwre z a1 b1 c1
-     aererwwre x d1 e1 f1
-	  aererwwre y d1 e1 f1
-	  aererwwre z d1 e1 f1
-
-
-
-a
-b
-c
-▶	ı123
-djk
-▶  ı456
-
-
-
-a123
-b123
-c123
-djk
-	ı456
-
-
-a123456
-b123456
-c123456
-djk456
-
-
-{	{ a , b , c } ,
-	{ a1 , b1 , c1 } ,
-	{ d1 , e1 , f1 } 	}
-	{ { x , y , z } ı , { y } , { z } } 333ıııı
-
-
-
-
-
-
-
-
- 'Holed'mogeneous
--}
+main = either print putStrLn. parseString mixture "<stdin>" =<< getContents
+--main = either print (putStrLn.groom). parseString root "<stdin>" =<< getContents
