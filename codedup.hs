@@ -10,19 +10,21 @@ import Control.Applicative
 import Data.List
 import qualified Data.Vector as V
 import Data.Maybe
-type Shard = Either String Int
+type Shard = Either String (Int,Int)
 type Holed = [Shard]
 --data Term = A Holed | L [Term]
 
 substitute::(String, [[Holed]]) -> Holed -> Holed
-substitute (sep, mat) h = intercalate [Left sep] [ f (cycle row) h | row <- mat]
+substitute (sep, mat) h = intercalate [Left sep] [sub (V.fromList row) (cycle row) h | row <- mat]
 	where
-	f = curry $ \case 
-		(xs, Left y:ys) -> Left y : f xs ys
-		--([], Right y:ys) -> Right y : f [] ys
-		(x:xs, Right 0:ys) -> x ++ f xs ys
-		(xs, Right y:ys) -> Right (y-1) : f xs ys
-		(_, []) -> []
+	sub v = f where
+		f = curry $ \case 
+			(xs, Left y:ys) -> Left y : f xs ys
+			--([], Right y:ys) -> Right y : f [] ys
+			(x:xs, Right (0,-1):ys) -> x ++ f xs ys
+			(xs, Right (0,i):ys) | i>=0 -> (v V.! i) ++ f xs ys
+			(xs, Right (y,i):ys) | y>0 -> Right (y-1,i) : f xs ys
+			(_, []) -> []
 
 -- TODO : concat
 
@@ -35,8 +37,7 @@ root :: String
 	= term+ { unlines $ map (concat.lefts) $1 }
 
 mixture :: String
-	= ("▷▷" root "◁◁" 
-	/ . {[$1]})* {concat $1}
+	= ("▷▷" root "◁◁" / . {[$1]})* {concat $1}
 
 -- atom ::: String
 	-- = '▷'  ('◁'[◁]/[^◁])* '◁'
@@ -44,7 +45,7 @@ mixture :: String
 	-- / [a-z0-9ı]+
 	
 hole :: Shard
-	= 'ı' [0-9]* {Right $ read ('0':$1)} 	
+	= 'ı' [0-9]* (':' [0-9]+)? {Right (read ('0':$1), maybe (-1) read $2)} 
 
 atom ::: Holed
 	= '▷' (
